@@ -31,4 +31,4 @@ from .backends.renderer import (set_3d_backend, get_3d_backend, use_3d_backend,
                                 set_3d_view, set_3d_title, create_3d_figure,
                                 get_brain_class)
 from . import backends, _brain
-from ._figure import MNEFigParams, MNEFigure, MNEBrowseFigure
+from ._figure import mne_figure
