@@ -1658,6 +1658,7 @@ def plot_sensors(info, kind='topomap', ch_type=None, title=None,
                   for i, pick in enumerate(picks)]
     else:
         if ch_groups in ['position', 'selection']:
+            print(ch_groups)
             if ch_groups == 'position':
                 ch_groups = _divide_to_regions(info, add_stim=False)
                 ch_groups = list(ch_groups.values())
@@ -2078,7 +2079,7 @@ class SelectFromCollection(object):
     """
 
     def __init__(self, ax, collection, ch_names, alpha_other=0.3,
-                 linewidth_other=1):
+                 linewidth_other=0.5):
         from matplotlib import __version__
         if LooseVersion(__version__) < LooseVersion('1.2.1'):
             raise ImportError('Interactive selection not possible for '
@@ -2154,7 +2155,7 @@ class SelectFromCollection(object):
         # style sensors at `inds`
         self.fc[inds, -1] = 1
         self.ec[inds, -1] = 1
-        self.lw[inds] = 2
+        self.lw[inds] = 1
         self.collection.set_facecolors(self.fc)
         self.collection.set_edgecolors(self.ec)
         self.collection.set_linewidths(self.lw)
