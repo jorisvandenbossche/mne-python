@@ -1633,6 +1633,8 @@ class MNEBrowseFigure(MNEFigure):
     def _draw_traces(self):
         """Draw (or redraw) the channel data."""
         from matplotlib.colors import to_rgba_array
+        from matplotlib.path import Path
+        from matplotlib.patches import PathPatch
         # convenience
         butterfly = self.mne.butterfly
         offsets = self.mne.trace_offsets
@@ -1666,19 +1668,29 @@ class MNEBrowseFigure(MNEFigure):
                        for decim_value in set(decim)}
         this_data = self.mne.data * self.mne.scale_factor * -1
         # convert to masked array
-        np.ma.array(this_data, mask=np.zeros_like(this_data, dtype=bool),
-                    shrink=False)
         # clip
+        time_range = (self.mne.times + self.mne.first_time)[[0, -1]]
         if self.mne.clipping == 'clamp':
-            this_data = np.ma.clip(this_data, -0.5, 0.5)
+            this_data = np.clip(this_data, -0.5, 0.5)
         elif self.mne.clipping is not None:
             clip = self.mne.clipping * (0.2 if butterfly else 1)
             v1, v2 = clip * np.array([-1, 1])
-            this_data = np.ma.masked_outside(this_data, v1, v2, copy=False)
-        # draw bads separately so they can have a lower z-order
-        bad_data = np.ma.array(this_data, mask=this_data.mask, copy=True)
-        bad_data[np.nonzero(np.logical_not(bads)), :] = np.ma.masked
-        this_data[np.nonzero(bads), :] = np.ma.masked
+            clip_offsets = np.unique(self.mne.trace_offsets).astype(int)
+            verts = np.zeros((clip_offsets.size, 5, 2))
+            for clip_offset in clip_offsets:
+                verts[clip_offset, :, 0] = np.concatenate(
+                    (time_range, time_range[::-1], [0]))
+                verts[clip_offset, :, 1] = (
+                    clip_offset + clip * np.array([-1, -1, 1, 1, 0]))
+            verts = verts.reshape(-1, 2)
+            codes = (([Path.MOVETO] + 3 * [Path.LINETO] + [Path.CLOSEPOLY])
+                     * len(clip_offsets))
+            clip_path = Path(verts, codes)
+            clip_patch = PathPatch(clip_path,
+                                   facecolor='none', edgecolor='none')
+            self.mne.ax_main.add_patch(clip_patch)
+
+        bad_data = this_data[bads]
         # update line collections
         this_offsets = np.ma.vstack((np.zeros_like(offsets), offsets)).T
         for attr, data in dict(bad_traces=bad_data, traces=this_data).items():
@@ -1687,9 +1699,10 @@ class MNEBrowseFigure(MNEFigure):
             lc = getattr(self.mne, attr)
             lc.set_offsets(this_offsets)  # must set before segments
             lc.set(segments=segments, color=ch_colors)
+            if self.mne.clipping is not None and self.mne.clipping != 'clamp':
+                lc.set_clip_path(clip_patch)
         # update xlim
-        this_times = self.mne.times + self.mne.first_time
-        self.mne.ax_main.set_xlim(this_times[0], this_times[-1])
+        self.mne.ax_main.set_xlim(*time_range)
         # draw scalebars maybe
         if self.mne.scalebars_visible:
             self._show_scalebars()
