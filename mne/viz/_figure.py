@@ -727,9 +727,80 @@ class MNEBrowseFigure(MNEFigure):
         fig.lasso.style_sensors(inds)
         fig.mne.parent_fig.mne.foo = ax.collections[0]
 
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+    # BUTTERFLY MODE
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+    def _butterfly_image(self, data, bad_data):
+        """Create an image that approximates overplotted lines."""
+        from matplotlib.colors import ListedColormap, BoundaryNorm
+        # convenience
+        ch_names = self.mne.ch_names[self.mne.picks]
+        ch_types = self.mne.ch_types[self.mne.picks]
+        # precompute image based on number of pixels in axes
+        dims = self.mne.ax_main.get_window_extent().bounds[-2:]
+        width, height = np.round(dims).astype(int)
+        vert_bins = np.linspace(*self.mne.ax_main.get_ylim(), height)[::-1]
+        horz_bins = np.linspace(*self.mne.ax_main.get_xlim(), width)
+        image = np.zeros((vert_bins.size, horz_bins.size), dtype=int)
+        # interpolate data (one datum per horizontal pixel)
+        interp_func = partial(np.interp, horz_bins, self.mne.times)
+        offsets = self.mne.trace_offsets[:, np.newaxis]
+        data = np.ma.array(data.data + offsets, mask=data.mask)
+        bad_data = np.ma.array(bad_data.data + offsets, mask=bad_data.mask)
+        data = np.ma.apply_along_axis(interp_func, axis=-1, arr=data)
+        bad_data = np.ma.apply_along_axis(interp_func, axis=-1, arr=bad_data)
+        # do bads first, all at once (all same color regardless of ch. type)
+        bad_bool = np.in1d(ch_names, self.mne.info['bads'])
+        bad_ixs = bad_bool.nonzero()
+        bad_image = _butterfly_image_helper(bad_data[bad_ixs], vert_bins,
+                                            height)
+        image = np.ma.dstack((image, bad_image))
+        # now do good channels, one ch_type at a time (for color reasons)
+        colors = [self.mne.bgcolor, self.mne.ch_color_bad]  # bkgd, bads
+        this_ch_types = set(ch_types)
+        ch_type_order = [_type for _type in _DATA_CH_TYPES_ORDER_DEFAULT
+                         if _type in this_ch_types]
+        for ix, ch_type in enumerate(ch_type_order, start=2):
+            # get channel indices
+            ch_bool = ch_types == ch_type
+            ch_ixs = (ch_bool & ~bad_bool).nonzero()
+            # create pixel masks; multiply by ix to get colormap right
+            this_image = ix * _butterfly_image_helper(data[ch_ixs], vert_bins,
+                                                      height)
+            image = np.ma.dstack((image, this_image))
+            # append channel color
+            color = np.unique(self.mne.def_colors[ch_ixs])
+            assert len(color) == 1
+            colors.append(color[0])
+        image = np.ma.max(image, axis=-1)  # approximates the zorder we want
+        # make custom discrete cmap
+        cmap = ListedColormap(colors, name='MNE-Python default channel colors')
+        cmap.set_bad(self.mne.bgcolor)
+        norm = BoundaryNorm(np.linspace(-0.5, ix + 0.5, cmap.N + 1), cmap.N)
+        # show image
+        extent = self.mne.ax_main.get_xlim() + self.mne.ax_main.get_ylim()
+        self.mne.butterfly_image = self.mne.ax_main.imshow(
+            image, cmap=cmap, norm=norm, extent=extent, zorder=-1,
+            aspect='auto')
+        # TODO: toggle_butterfly now needs to show/hide (or create/destroy?)
+        # the image or LineCollection
+        # TODO: scrolling needs to replace the image data
+
     def _toggle_butterfly(self):
         """Enter or leave butterfly mode."""
         self.mne.ax_vscroll.set_visible(self.mne.butterfly)
+        if self.mne.butterfly:  # clear the butterfly image
+            self.mne.ax_main.images.remove(self.mne.butterfly_image)
+            self.mne.butterfly_image = None
+        else:  # clear the individual channel traces
+            segments = np.full((1, 1, 2), np.nan)
+            offsets = np.zeros((1, 2))
+            for attr in ('bad_traces', 'traces'):
+                lc = getattr(self.mne, attr)
+                lc.set_offsets(offsets)  # must set before segments
+                lc.set(segments=segments)
+        # update and redraw
         self.mne.butterfly = not self.mne.butterfly
         self.mne.scale_factor *= 0.5 if self.mne.butterfly else 2.
         self._update_picks()
@@ -1664,10 +1735,11 @@ class MNEBrowseFigure(MNEFigure):
         decim_times = {decim_value:
                        self.mne.times[::decim_value] + self.mne.first_time
                        for decim_value in set(decim)}
+        # scale data & convert to masked array
         this_data = self.mne.data * self.mne.scale_factor * -1
-        # convert to masked array
-        np.ma.array(this_data, mask=np.zeros_like(this_data, dtype=bool),
-                    shrink=False)
+        this_data = np.ma.array(this_data, shrink=False, copy=True,
+                                mask=np.zeros_like(this_data, dtype=bool))
+        bad_data = this_data.copy()
         # clip
         if self.mne.clipping == 'clamp':
             this_data = np.ma.clip(this_data, -0.5, 0.5)
@@ -1675,21 +1747,26 @@ class MNEBrowseFigure(MNEFigure):
             clip = self.mne.clipping * (0.2 if butterfly else 1)
             v1, v2 = clip * np.array([-1, 1])
             this_data = np.ma.masked_outside(this_data, v1, v2, copy=False)
-        # draw bads separately so they can have a lower z-order
-        bad_data = np.ma.array(this_data, mask=this_data.mask, copy=True)
-        bad_data[np.nonzero(np.logical_not(bads)), :] = np.ma.masked
-        this_data[np.nonzero(bads), :] = np.ma.masked
-        # update line collections
-        this_offsets = np.ma.vstack((np.zeros_like(offsets), offsets)).T
-        for attr, data in dict(bad_traces=bad_data, traces=this_data).items():
-            segments = [np.ma.vstack((decim_times[_dec], _dat[..., ::_dec])).T
-                        for _dat, _dec in zip(data, decim)]
-            lc = getattr(self.mne, attr)
-            lc.set_offsets(this_offsets)  # must set before segments
-            lc.set(segments=segments, color=ch_colors)
         # update xlim
         this_times = self.mne.times + self.mne.first_time
         self.mne.ax_main.set_xlim(this_times[0], this_times[-1])
+        # mask bad chans in good data, and mask good chans in bad data
+        this_data[np.nonzero(bads), :] = np.ma.masked
+        bad_data[np.nonzero(np.logical_not(bads)), :] = np.ma.masked
+        # draw
+        if butterfly:
+            self._butterfly_image(this_data, bad_data)
+        else:
+            # update line collections
+            this_offsets = np.ma.vstack((np.zeros_like(offsets), offsets)).T
+            for attr, data in dict(bad_traces=bad_data,
+                                   traces=this_data).items():
+                segments = [np.ma.vstack((decim_times[_dec],
+                                          _dat[..., ::_dec])).T
+                            for _dat, _dec in zip(data, decim)]
+                lc = getattr(self.mne, attr)
+                lc.set_offsets(this_offsets)  # must set before segments
+                lc.set(segments=segments, color=ch_colors)
         # draw scalebars maybe
         if self.mne.scalebars_visible:
             self._show_scalebars()
@@ -1805,3 +1882,30 @@ def browse_figure(inst, **kwargs):
     # add event callbacks
     fig._add_default_callbacks()
     return fig
+
+
+def _butterfly_image_helper(data, bins, height, bresenham=False):
+    """Convert data to a boolean pixel mask."""
+
+    def _bincount(data, bins=bins, height=height, bresenham=bresenham):
+        """Convert one channel of data to a boolean pixel mask."""
+        from skimage.draw import line
+        # this is slightly faster than np.digitize(data, bins)
+        digitized = np.searchsorted(bins, np.atleast_2d(data), side='left')
+        image = np.ma.apply_along_axis(
+            partial(np.bincount, minlength=height + 1),
+            axis=0, arr=digitized).astype(bool)
+        if bresenham:  # connect the dots using Bresenham's algorithm
+            cc, rr = image.T.nonzero()
+            for cix0, cix1, rix0, rix1 in zip(cc[:-1], cc[1:],
+                                              rr[:-1], rr[1:]):
+                _rr, _cc = line(rix0, cix0, rix1, cix1)
+                image[_rr, _cc] = True
+        return image
+
+    if bresenham:
+        bincounts = np.apply_along_axis(_bincount, axis=-1, arr=data)
+        return np.any(bincounts, axis=0)[:height]
+    else:
+        bincounts = _bincount(data)
+        return bincounts[:height]
