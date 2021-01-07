@@ -3,14 +3,12 @@
 #          Eric Larson <larson.eric.d@gmail.com>
 #          Denis Egnemann <denis.engemann@gmail.com>
 #          Stefan Appelhoff <stefan.appelhoff@mailbox.org>
+#          Daniel McCloy <dan@mccloy.info>
 # License: BSD Style.
 
 from collections import OrderedDict
 import os
 import os.path as op
-import shutil
-import tarfile
-import stat
 import sys
 import zipfile
 import tempfile
@@ -24,7 +22,7 @@ from ._fsaverage.base import fetch_fsaverage
 from .. import __version__ as mne_version
 from ..label import read_labels_from_annot, Label, write_labels_to_annot
 from ..utils import (get_config, set_config, _fetch_file, logger, warn,
-                     verbose, get_subjects_dir, hashfunc, _pl, _safe_input)
+                     verbose, get_subjects_dir, _pl, _safe_input)
 from ..utils.docs import docdict
 from ..externals.doccer import docformat
 
