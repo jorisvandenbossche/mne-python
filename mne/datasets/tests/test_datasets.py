@@ -30,17 +30,15 @@ def test_datasets_basic(tmpdir):
                   'visual_92_categories', 'fieldtrip_cmc'):
         if dname.startswith('bst'):
             dataset = getattr(datasets.brainstorm, dname)
-            check_name = 'brainstorm.%s' % (dname,)
         else:
             dataset = getattr(datasets, dname)
-            check_name = dname
         if dataset.data_path(download=False) != '':
             assert isinstance(dataset.get_version(), str)
-            assert datasets.utils.has_dataset(check_name)
+            assert datasets.utils.has_dataset(dname)
         else:
             assert dataset.get_version() is None
-            assert not datasets.utils.has_dataset(check_name)
-        print('%s: %s' % (dname, datasets.utils.has_dataset(check_name)))
+            assert not datasets.utils.has_dataset(dname)
+        print('%s: %s' % (dname, datasets.utils.has_dataset(dname)))
     tempdir = str(tmpdir)
     # don't let it read from the config file to get the directory,
     # force it to look for the default
