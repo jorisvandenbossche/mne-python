@@ -14,6 +14,7 @@ import zipfile
 import tempfile
 import pkg_resources
 from distutils.version import LooseVersion
+from shutil import rmtree
 
 import numpy as np
 
@@ -443,8 +444,10 @@ def _data_path(path=None, force_update=False, update_path=True, download=True,
         os.remove(op.join(path, archive_name))
     # remove version number from "misc" and "testing" datasets folder names
     if name == 'misc':
+        rmtree(final_path, ignore_errors=True)
         os.replace(op.join(path, MISC_VERSIONED), final_path)
     elif name == 'testing':
+        rmtree(final_path, ignore_errors=True)
         os.replace(op.join(path, TESTING_VERSIONED), final_path)
     # maybe update the config
     old_name = 'brainstorm' if name.startswith('bst_') else name
