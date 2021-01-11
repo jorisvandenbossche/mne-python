@@ -374,7 +374,7 @@ def _data_path(path=None, force_update=False, update_path=True, download=True,
             if answer.lower() != 'y':
                 raise RuntimeError(
                     'You must agree to the license to use this dataset')
-    # downloader & processors
+    # downloader & processors TODO: may want to skip using tqdm during tests?
     downloader = pooch.HTTPDownloader(progressbar=True)  # use tqdm
     unzip = pooch.Unzip(extract_dir=path)
     untar = pooch.Untar(extract_dir=path)
@@ -453,7 +453,7 @@ def _data_path(path=None, force_update=False, update_path=True, download=True,
     old_name = 'brainstorm' if name.startswith('bst_') else name
     _do_path_update(path, update_path, CONFIG_KEYS[name], old_name)
     # compare the version of the dataset and mne
-    data_version = _dataset_version(final_path, old_name)
+    data_version = _dataset_version(final_path, name)
     # 0.7 < 0.7.git should be False, therefore strip
     if check_version and (LooseVersion(data_version) <
                           LooseVersion(mne_version.strip('.git'))):
@@ -487,7 +487,8 @@ def has_dataset(name):
     """
     name = 'spm' if name == 'spm_face' else name
     dp = _data_path(download=False, name=name, check_version=False)
-    return dp.endswith(FOLDER_NAMES[name])
+    check = name if name.startswith('bst_') else FOLDER_NAMES[name]
+    return dp.endswith(check)
 
 
 @verbose
